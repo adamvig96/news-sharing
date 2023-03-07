@@ -1,0 +1,122 @@
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: aarch64-apple-darwin20 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+* Project '~/Dropbox/projects/news-sharing' loaded. [renv 0.14.0]
+[Previously saved workspace restored]
+
+> renv::activate()
+* Project '~/Dropbox/projects/news-sharing' loaded. [renv 0.14.0]
+> 
+> library(tidyverse)
+── Attaching packages ─────────────────────────────────────── tidyverse 1.3.2 ──
+✔ ggplot2 3.3.6      ✔ purrr   0.3.4 
+✔ tibble  3.1.8      ✔ dplyr   1.0.10
+✔ tidyr   1.2.1      ✔ stringr 1.4.1 
+✔ readr   2.1.2      ✔ forcats 0.5.2 
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+> library(dplyr)
+> library(haven)
+> library(ggplot2)
+> 
+> source_slant_data <- read_csv("data/validation/hungarian_media_slant.csv")
+Rows: 35 Columns: 2
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr (1): source
+dbl (1): pro_govt
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> raw <- read_csv("data/clean/citation_data_sample.csv") %>%
++   filter(section %in% c("belfold", "kulfold", "gazdasag")) %>% #filter for 'hard news'
++   filter(date >= "2019-07-01" & date < "2020-07-01") %>%
++   filter(source != "origo.hu" & source != "24.hu") %>%
++   mutate(origo = ifelse(page == "origo.hu", 1, 0)) %>%
++   merge(source_slant_data, all.x = TRUE, by = "source") %>%
++   filter(!is.na(pro_govt))
+Rows: 45408 Columns: 6
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr  (5): section, url, source_url, page, source
+date (1): date
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> slant_mean_estimates <- raw %>%
++   group_by(source) %>%
++   dplyr::summarise(
++     alignment_score = mean(origo, na.rm = TRUE),
++     se = sd(origo, na.rm = TRUE) / sqrt(n()),
++     total_cites = n(),
++     origo_cites = sum(origo),
++     hn_cites = total_cites - origo_cites
++   ) %>%
++   mutate(
++     alignment_score = 200 * (alignment_score - 0.5),
++     se = 200 * se,
++     low_ci = alignment_score - 1.96 * se,
++     upper_ci = alignment_score + 1.96 * se,
++     source = as.factor(source)
++   ) %>%
++   filter((upper_ci - low_ci) < 50) %>%
++   mutate(low_ci = ifelse(low_ci < -100, -100, low_ci)) %>%
++   mutate(upper_ci = ifelse(upper_ci > 100, 100, upper_ci))
+> 
+> slant_mean_estimates <- slant_mean_estimates %>%
++   merge(source_slant_data, all.x = TRUE, by = "source") %>%
++   mutate(pro_govt = ifelse(source == "nol.hu", 0, pro_govt)) %>%
++   mutate(pro_govt = ifelse(pro_govt == 1, "Pro-government", "Independent")) %>% 
++   separate(source, c("source",NA)) %>% 
++   mutate(source = ifelse(source == "hu", "euronews", source)) %>% 
++   mutate(source = ifelse(source == "mno", "Magyar Nemzet", source))
+Warning message:
+Expected 2 pieces. Additional pieces discarded in 1 rows [10]. 
+> 
+> 
+> ggplot(
++   slant_mean_estimates,
++   aes(
++     x = reorder(source, alignment_score), y = alignment_score, shape = pro_govt
++   )
++ ) +
++   geom_point(aes(size = pro_govt)) +
++   coord_flip() +
++   scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 50)) +
++   geom_errorbar(aes(ymin = low_ci, ymax = upper_ci),
++     width = 0.4,
++     alpha = 0.5
++   ) +
++   scale_shape_manual(values = c(1, 17)) +
++   scale_size_manual(values = c(1.3, 2)) +
++   theme_bw() +
++   labs(title = "", x = "", y = "Alignment score") +
++   theme(legend.position = "right", legend.title = element_blank())
+> 
+> ggsave(
++   "results/figures/xsec_hardnews.png",
++   device = "png", dpi = "print", width = 8, height = 5
++ )
+> 
+> proc.time()
+   user  system elapsed 
+  1.231   0.137   1.410 

@@ -1,0 +1,128 @@
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: aarch64-apple-darwin20 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+* Project '~/Dropbox/projects/news-sharing' loaded. [renv 0.14.0]
+[Previously saved workspace restored]
+
+> renv::activate()
+* Project '~/Dropbox/projects/news-sharing' loaded. [renv 0.14.0]
+> 
+> library(tidyverse)
+── Attaching packages ─────────────────────────────────────── tidyverse 1.3.2 ──
+✔ ggplot2 3.3.6      ✔ purrr   0.3.4 
+✔ tibble  3.1.8      ✔ dplyr   1.0.10
+✔ tidyr   1.2.1      ✔ stringr 1.4.1 
+✔ readr   2.1.2      ✔ forcats 0.5.2 
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+> library(dplyr)
+> library(haven)
+> library(ggplot2)
+> library(fixest)
+> library(lubridate)
+
+Attaching package: ‘lubridate’
+
+The following objects are masked from ‘package:base’:
+
+    date, intersect, setdiff, union
+
+> library(zoo)
+
+Attaching package: ‘zoo’
+
+The following objects are masked from ‘package:base’:
+
+    as.Date, as.Date.numeric
+
+> library(xtable)
+> 
+> mno_slant_estimate <- read_csv("data/clean/citation_data_sample.csv") %>%
++   filter(section %in% c("belfold", "kulfold", "gazdasag")) %>% # filter for 'hard news'
++   filter(date > "2016-06-30" & date < "2021-07-01") %>%
++   filter(source == "mno.hu") %>%
++   mutate(ym = substr(date, 1, 7)) %>%
++   select(ym, page, source) %>%
++   mutate(year = as.factor(substr(ym, 1, 4))) %>%
++   mutate(ym = as.Date(paste(ym, "-01", sep = ""))) %>%
++   mutate(quarter = lubridate::quarter(ym, with_year = FALSE)) %>%
++   mutate(date = as.yearqtr(paste(year, quarter, sep = "-"))) %>%
++   mutate(nerpage = ifelse(page == "origo.hu", 1, 0)) %>%
++   group_by(date, source) %>%
++   dplyr::summarise(
++     alignment_score = mean(nerpage, na.rm = TRUE),
++     se = sd(nerpage, na.rm = TRUE) / sqrt(n()),
++     total_cites = n()
++   ) %>%
++   mutate(alignment_score = ifelse(
++     (date == as.yearqtr("2018-03") & (source == "mno.hu")), NA, alignment_score
++   )) %>%
++   mutate(alignment_score = ifelse(
++     (date == as.yearqtr("2018-04") & (source == "mno.hu")), NA, alignment_score
++   )) %>%
++   mutate(
++     alignment_score = 200 * (alignment_score - 0.5),
++     se = 200 * se,
++     low_ci = alignment_score - 1.96 * se,
++     upper_ci = alignment_score + 1.96 * se
++   ) %>%
++   mutate(low_ci = ifelse(low_ci < -100, -100, low_ci))
+Rows: 45408 Columns: 6
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr  (5): section, url, source_url, page, source
+date (1): date
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+`summarise()` has grouped output by 'date'. You can override using the
+`.groups` argument.
+> 
+> ggplot(mno_slant_estimate, aes(x = date, y = alignment_score)) +
++   geom_line(size = 0.6) +
++   geom_point() +
++   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), alpha = 0.4) +
++   scale_x_yearqtr(format = "%Y", expand = c(0.02, 0.02)) +
++   scale_y_continuous(limits = c(-105, 100), expand = c(0.01, 0.01)) +
++   geom_vline(
++     xintercept = as.yearqtr("2019-1"),
++     linetype = "dashed",
++     color = "black"
++   ) +
++   annotate("text",
++     x = as.yearqtr("2018-4"), y = 40,
++     label = "capture of Magyar Nemzet", size = 3, color = "black", angle = 90
++   ) +
++   theme_bw() +
++   xlab("") +
++   ylab("Alingment score of Magyar Nemzet")
+Warning message:
+Removed 2 rows containing missing values (geom_point). 
+> 
+> 
+> ggsave("results/figures/dynamic_hardnews.png",
++   device = "png", dpi = "print", width = 8, height = 5
++ )
+Warning message:
+Removed 2 rows containing missing values (geom_point). 
+> 
+> proc.time()
+   user  system elapsed 
+  1.379   0.145   1.545 
